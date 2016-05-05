@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>main</string>
+	<key>CFBundleIconFile</key>
+	<string>Calculator.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.schoonology.Browter</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>1.0</string>
+	<key>CFBundleName</key>
+	<string>Browter</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Shell</string>
+			<key>CFBundleURLName</key>
+			<string>com.schoonology.browter</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>file</string>
+				<string>http</string>
+				<string>https</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>0.1</string>
+	<key>LSHasLocalizedDisplayName</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.7</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+</dict>
+</plist>
