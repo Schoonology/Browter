@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
 
+NSMutableDictionary *settings;
+
 /**
  * Prints usage information to STDOUT.
  */
@@ -9,6 +11,7 @@ void usage() {
   printf("  browter add RULE BROWSER\n");
   printf("  browter default BROWSER\n");
   printf("  browter remove RULE\n");
+  printf("  browter quit\n");
   printf("\n");
   printf("For more information, see https://github.com/Schoonology/Browter.\n");
 }
@@ -29,6 +32,20 @@ void error(NSString *format, ...) {
   #pragma clang diagnostic pop
   printf("\n\n");
   usage();
+}
+
+void save() {
+  [settings writeToFile:[@"~/.browterrc" stringByExpandingTildeInPath] atomically:FALSE];
+}
+
+void pid_clear() {
+  [settings removeObjectForKey:@"pid"];
+  save();
+}
+
+void signal_handle(int signo) {
+  pid_clear();
+  exit(0);
 }
 
 /**
@@ -99,7 +116,7 @@ void error(NSString *format, ...) {
  * the actual URL routing.
  */
 int main(int argc, const char * argv[]) {
-  NSMutableDictionary *settings = [NSMutableDictionary dictionaryWithContentsOfFile:[@"~/.browterrc" stringByExpandingTildeInPath]];
+  settings = [NSMutableDictionary dictionaryWithContentsOfFile:[@"~/.browterrc" stringByExpandingTildeInPath]];
 
   if (!settings) {
     settings = [[NSMutableDictionary alloc] init];
@@ -135,6 +152,14 @@ int main(int argc, const char * argv[]) {
         encoding:[NSString defaultCStringEncoding]]];
     [settings writeToFile:[@"~/.browterrc" stringByExpandingTildeInPath] atomically:FALSE];
     return 0;
+  } else if ([@"quit" isEqualToString:command]) {
+    if (argc > 2) {
+      error(@"Error: No arguments allowed for \"quit\" command.");
+      return 1;
+    }
+
+    [NSTask launchedTaskWithLaunchPath:@"/bin/kill" arguments:@[[[settings objectForKey:@"pid"] description]]];
+    return 0;
   } else if (command) {
     error(@"Error: \"%@\" is not a valid Browter command.", command);
     return 1;
@@ -144,6 +169,16 @@ int main(int argc, const char * argv[]) {
   NSLog(@"====================");
   NSLog(@"Settings: %@", settings);
   NSLog(@"PID: %d", [[NSProcessInfo processInfo] processIdentifier]);
+
+  atexit(pid_clear);
+  signal(SIGHUP, signal_handle);
+  signal(SIGINT, signal_handle);
+  signal(SIGTERM, signal_handle);
+  signal(SIGQUIT, signal_handle);
+
+  [settings setValue:[NSNumber numberWithInt:[[NSProcessInfo processInfo] processIdentifier]]
+    forKey:@"pid"];
+  [settings writeToFile:[@"~/.browterrc" stringByExpandingTildeInPath] atomically:FALSE];
 
   ProcessSerialNumber psn = { 0, kCurrentProcess };
   TransformProcessType(&psn, kProcessTransformToBackgroundApplication);
