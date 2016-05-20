@@ -12,6 +12,7 @@ NSString *kUsageInfo = @"Usage:\n"
   "  browter add RULE BROWSER\n"
   "  browter default BROWSER\n"
   "  browter remove RULE\n"
+  "  browter status\n"
   "  browter quit\n"
   "\n"
   "For more information, see https://github.com/Schoonology/Browter.\n";
@@ -127,11 +128,28 @@ int run_command(NSString *command, NSArray<NSString *> *args) {
       write_setting(args[0], nil);
       stop_server();
     }],
-    @"list": @[@[], ^(NSArray<NSString *> *args) {
+    @"status": @[@[], ^(NSArray<NSString *> *args) {
+      int pid = [[settings objectForKey:kProcessIdentifierKey] intValue];
+      if (pid) {
+        printf("Server: Running(%d)\n", pid);
+      } else {
+        printf("Server: Stopped\n");
+      }
+
       printf("Rules:\n");
-      [settings enumerateKeysAndObjectsUsingBlock:^(NSString *rule, NSString *browser, BOOL *stop) {
-        printf("  %s => %s\n", [rule UTF8String], [browser UTF8String]);
+      [settings enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *value, BOOL *stop) {
+        if ([key isEqualToString:kProcessIdentifierKey] || [key isEqualToString:kDefaultAppNameKey]) {
+          return;
+        }
+
+        printf("  %s => %s\n", [key UTF8String], [value UTF8String]);
       }];
+
+      NSString* defaultBrowser = [settings objectForKey:kDefaultAppNameKey];
+      if (!defaultBrowser) {
+        defaultBrowser = kFallbackDefaultAppName;
+      }
+      printf("Default: %s\n", [defaultBrowser UTF8String]);
     }],
     @"quit": @[@[], ^(NSArray<NSString *> *args) {
       stop_server();
