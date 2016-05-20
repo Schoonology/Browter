@@ -10,8 +10,10 @@ For now, this project assumes you're either a developer or sufficiently
 technically minded, so it requires you to build from source. Ensure you have
 [XCode][xcode] installed, then run:
 
-    make
-    make install
+```sh
+make
+make install
+```
 
 The first `make` command builds Browter itself, while `make install` makes the
 companion `browter` script available on the command-line.
@@ -33,7 +35,7 @@ companion `browter` script available on the command-line.
 
 ## Example
 
-```
+```sh
 # Open all Google-y things in the Google Browser™.
 browter add google "Google Chrome"
 # Use Opera by default.
