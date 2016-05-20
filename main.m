@@ -5,6 +5,7 @@
  * Constants
  */
 NSString *kProcessIdentifierKey = @"__pid";
+NSString *kDefaultAppNameKey = @"__default";
 NSString *kFallbackDefaultAppName = @"Safari";
 NSString *kSettingsFileName = @"~/.browterrc";
 NSString *kUsageInfo = @"Usage:\n"
@@ -48,7 +49,11 @@ void clear_pid(int signo) {
  * file.
  */
 void open_url(NSString *url) {
-  NSString* __block app = kFallbackDefaultAppName;
+  NSString* __block app = [settings objectForKey:kDefaultAppNameKey];
+
+  if (!app) {
+    app = kFallbackDefaultAppName;
+  }
 
   // This enumeration happens in a theoretically arbitrary order, which is why
   // rules should, generally, not overlap.
@@ -75,6 +80,21 @@ void open_url(NSString *url) {
  * For more information on the desired behaviour of commands, see the README.
  */
 int run_command(NSString *command, NSArray<NSString *> *args) {
+  if ([@"default" isEqualToString:command]) {
+    if ([args count] < 1) {
+      error(@"Error: \"default\" command requires a BROWSER argument.");
+      return 1;
+    } else if ([args count] > 1) {
+      error(@"Error: Too many arguments for \"default\" command.");
+      return 1;
+    }
+
+    [settings setObject:args[0] forKey:kDefaultAppNameKey];
+    [settings writeToFile:kSettingsFileName atomically:FALSE];
+
+    return 0;
+  }
+
   if ([@"add" isEqualToString:command]) {
     if ([args count] < 2) {
       error(@"Error: \"add\" command requires both RULE and BROWSER arguments.");
