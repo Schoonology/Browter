@@ -125,6 +125,20 @@ int run_command(NSString *command, NSArray<NSString *> *args) {
     return 0;
   }
 
+  if ([@"list" isEqualToString:command]) {
+    if ([args count] > 0) {
+      error(@"Error: No arguments allowed for \"list\" command.");
+      return 1;
+    }
+
+    printf("Rules:\n");
+    [settings enumerateKeysAndObjectsUsingBlock:^(NSString *rule, NSString *browser, BOOL *stop) {
+      printf("  %s => %s\n", [rule UTF8String], [browser UTF8String]);
+    }];
+
+    return 0;
+  }
+
   if ([@"quit" isEqualToString:command]) {
     if ([args count] > 0) {
       error(@"Error: No arguments allowed for \"quit\" command.");
