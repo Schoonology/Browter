@@ -35,11 +35,42 @@ void error(NSString *format, ...) {
 }
 
 /**
- * Clears this process' PID from the global settings file.
+ * Signals the current long-running process to quit.
  */
-void clear_pid(int signo) {
-  [settings removeObjectForKey:kProcessIdentifierKey];
+void stop_server() {
+  int pid = [[settings objectForKey:kProcessIdentifierKey] intValue];
+  if (pid) {
+    kill(pid, SIGHUP);
+  }
+}
+
+void read_settings() {
+  settings = [NSMutableDictionary dictionaryWithContentsOfFile:kSettingsFileName];
+  if (!settings) {
+    settings = [[NSMutableDictionary alloc] init];
+  }
+}
+
+/**
+ * Updates the shared settings file on disk.
+ */
+void write_setting(NSString *key, id value) {
+  if (value) {
+    [settings setObject:value forKey:key];
+  } else {
+    [settings removeObjectForKey:key];
+  }
+
   [settings writeToFile:kSettingsFileName atomically:FALSE];
+}
+
+/**
+ * Clears this process' PID from the global settings file. Presumably called
+ * to trap Unix signals, e.g. SIGHUP.
+ */
+void on_signal(int signo) {
+  read_settings();
+  write_setting(kProcessIdentifierKey, nil);
 
   exit(0);
 }
@@ -80,18 +111,21 @@ void open_url(NSString *url) {
  * For more information on the desired behaviour of commands, see the README.
  */
 int run_command(NSString *command, NSArray<NSString *> *args) {
+  // Command-specific logic. Any commands that update settings on disk also
+  // stop any running server. This helps guarantee future URLs use a fresh
+  // server instance and the current settings.
   NSDictionary *commands = @{
     @"default": @[@[@"BROWSER"], ^(NSArray<NSString *> *args) {
-      [settings setObject:args[0] forKey:kDefaultAppNameKey];
-      [settings writeToFile:kSettingsFileName atomically:FALSE];
+      write_setting(kDefaultAppNameKey, args[0]);
+      stop_server();
     }],
     @"add": @[@[@"RULE", @"BROWSER"], ^(NSArray<NSString *> *args) {
-      [settings setObject:args[1] forKey:args[0]];
-      [settings writeToFile:kSettingsFileName atomically:FALSE];
+      write_setting(args[0], args[1]);
+      stop_server();
     }],
     @"remove": @[@[@"RULE"], ^(NSArray<NSString *> *args) {
-      [settings removeObjectForKey:args[0]];
-      [settings writeToFile:kSettingsFileName atomically:FALSE];
+      write_setting(args[0], nil);
+      stop_server();
     }],
     @"list": @[@[], ^(NSArray<NSString *> *args) {
       printf("Rules:\n");
@@ -100,13 +134,11 @@ int run_command(NSString *command, NSArray<NSString *> *args) {
       }];
     }],
     @"quit": @[@[], ^(NSArray<NSString *> *args) {
-      int pid = [[settings objectForKey:kProcessIdentifierKey] intValue];
-      if (pid) {
-        kill(pid, SIGHUP);
-      }
+      stop_server();
     }],
   };
 
+  // Resolve the desired command, validate the arguments, and run accordingly.
   id pair = [commands objectForKey:command];
   int desiredCount = [[pair firstObject] count];
   int countDiff = [args count] - desiredCount;
@@ -168,14 +200,11 @@ int run_server() {
   NSLog(@"PID: %d", pid);
 
   // Wire up signal handler for all reasonable signals.
-  signal(SIGHUP, clear_pid);
-  signal(SIGINT, clear_pid);
+  signal(SIGHUP, on_signal);
+  signal(SIGINT, on_signal);
 
-  // Set a PID in our global settings file for `browter quit`.
-  [settings setValue:[NSNumber numberWithInt:pid]
-    forKey:kProcessIdentifierKey];
-  [settings writeToFile:kSettingsFileName
-    atomically:FALSE];
+  // Set a PID in our global settings file for `stop_server`.
+  write_setting(kProcessIdentifierKey, [NSNumber numberWithInt:pid]);
 
   // Initialize our URLHandler and wire up the one and only event we care
   // about: Getting a URL.
@@ -199,11 +228,7 @@ int main(int argc, const char * argv[]) {
 
   // Transform non-compile-time-constant values.
   kSettingsFileName = [kSettingsFileName stringByExpandingTildeInPath];
-
-  settings = [NSMutableDictionary dictionaryWithContentsOfFile:kSettingsFileName];
-  if (!settings) {
-    settings = [[NSMutableDictionary alloc] init];
-  }
+  read_settings();
 
   // If we have at least one argument, process it as a command.
   NSArray<NSString *> *arguments = [[NSProcessInfo processInfo] arguments];
