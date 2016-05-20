@@ -1,20 +1,24 @@
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
 
-NSMutableDictionary *settings;
+/**
+ * Constants
+ */
+NSString *kProcessIdentifierKey = @"__pid";
+NSString *kFallbackDefaultAppName = @"Safari";
+NSString *kSettingsFileName = @"~/.browterrc";
+NSString *kUsageInfo = @"Usage:\n"
+  "  browter add RULE BROWSER\n"
+  "  browter default BROWSER\n"
+  "  browter remove RULE\n"
+  "  browter quit\n"
+  "\n"
+  "For more information, see https://github.com/Schoonology/Browter.\n";
 
 /**
- * Prints usage information to STDOUT.
+ * Globals
  */
-void usage() {
-  printf("Usage:\n");
-  printf("  browter add RULE BROWSER\n");
-  printf("  browter default BROWSER\n");
-  printf("  browter remove RULE\n");
-  printf("  browter quit\n");
-  printf("\n");
-  printf("For more information, see https://github.com/Schoonology/Browter.\n");
-}
+NSMutableDictionary *settings;
 
 /**
  * Prints a printf-formatted string to STDOUT, followed by the usage.
@@ -22,168 +26,188 @@ void usage() {
 void error(NSString *format, ...) {
   va_list args;
   va_start(args, format);
-  NSString *formattedString = [[NSString alloc] initWithFormat: format
-    arguments: args];
+  NSString *formattedString = [[NSString alloc] initWithFormat:format arguments:args];
   va_end(args);
 
-  #pragma clang diagnostic push
-  #pragma clang diagnostic ignored "-Wformat-security"
-  printf([formattedString UTF8String]);
-  #pragma clang diagnostic pop
-  printf("\n\n");
-  usage();
+  printf("%s\n\n", [formattedString UTF8String]);
+  printf("%s", [kUsageInfo UTF8String]);
 }
 
-void save() {
-  [settings writeToFile:[@"~/.browterrc" stringByExpandingTildeInPath] atomically:FALSE];
-}
+/**
+ * Clears this process' PID from the global settings file.
+ */
+void clear_pid(int signo) {
+  [settings removeObjectForKey:kProcessIdentifierKey];
+  [settings writeToFile:kSettingsFileName atomically:FALSE];
 
-void pid_clear() {
-  [settings removeObjectForKey:@"pid"];
-  save();
-}
-
-void signal_handle(int signo) {
-  pid_clear();
   exit(0);
 }
 
 /**
- * Top-level object to give NSAppleEventManager something to call, as it cannot
- * call arbitrary functions.
+ * Opens `url` in our configured browser as defined by the global settings
+ * file.
  */
-@interface URLHandler : NSObject {
-  NSDictionary *rules;
-}
-+ (id)handlerWithDictionary:(NSDictionary *)rules;
-- (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent;
-@end
+void open_url(NSString *url) {
+  NSString* __block app = kFallbackDefaultAppName;
 
-@implementation URLHandler
-/**
- * Creates, initializes, and returns a new URLHandler wrapping `rules`.
- */
-+ (id)handlerWithDictionary:(NSDictionary *)rules {
-  URLHandler *handler = [[URLHandler alloc] init];
-
-  handler->rules = rules;
-
-  return handler;
-}
-
-/**
- * Initializes the URLHandler, wiring up the one and only event we care about.
- */
-- (id)init
-{
-  self = [super init];
-
-  if (self) {
-    [[NSAppleEventManager sharedAppleEventManager] setEventHandler:self
-      andSelector:@selector(handleGetURLEvent:withReplyEvent:)
-      forEventClass:kInternetEventClass
-      andEventID:kAEGetURL];
-  }
-
-  return self;
-}
-
-/**
- * Event handler fired whenever any http://, https://, or file:// URL is opened
- * system-wide (as defined in Info.plist).
- */
-- (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent
-{
-  NSString* url = [[event paramDescriptorForKeyword:keyDirectObject] stringValue];
-  NSString* __block app = @"Safari";
-
-  [self->rules enumerateKeysAndObjectsUsingBlock:^(NSString *rule, NSString *browser, BOOL *stop) {
+  // This enumeration happens in a theoretically arbitrary order, which is why
+  // rules should, generally, not overlap.
+  [settings enumerateKeysAndObjectsUsingBlock:^(NSString *rule, NSString *browser, BOOL *stop) {
     if ([url containsString:rule]) {
       app = browser;
-      *stop = TRUE;
+      *stop = YES;
     }
   }];
 
+  // Log to syslog. See `run_server` for more information.
   NSLog(@"Opening %@ with %@...", url, app);
 
+  // As it turns out, using `open` appears to be the only way to open a URL
+  // with a specific application.
   [NSTask launchedTaskWithLaunchPath:@"/usr/bin/open" arguments:@[url, @"-a", app]];
 }
 
-@end
-
 /**
- * Initializes the process and creates our top-level object, which will handle
- * the actual URL routing.
+ * Runs the individual `command`, based on `args`, returning the desired exit
+ * code. Errors resulting from invalid commands, arguments, etc. will be
+ * printed to STDOUT before returning.
+ *
+ * For more information on the desired behaviour of commands, see the README.
  */
-int main(int argc, const char * argv[]) {
-  settings = [NSMutableDictionary dictionaryWithContentsOfFile:[@"~/.browterrc" stringByExpandingTildeInPath]];
-
-  if (!settings) {
-    settings = [[NSMutableDictionary alloc] init];
-  }
-
-  NSString *command = argv[1] ? [NSString stringWithCString:argv[1] encoding:[NSString defaultCStringEncoding]] : nil;
-
+int run_command(NSString *command, NSArray<NSString *> *args) {
   if ([@"add" isEqualToString:command]) {
-    if (argc < 4) {
+    if ([args count] < 2) {
       error(@"Error: \"add\" command requires both RULE and BROWSER arguments.");
       return 1;
-    } else if (argc > 4) {
+    } else if ([args count] > 2) {
       error(@"Error: Too many arguments for \"add\" command.");
       return 1;
     }
 
-    [settings setObject:[NSString stringWithCString:argv[3]
-        encoding:[NSString defaultCStringEncoding]]
-      forKey:[NSString stringWithCString:argv[2]
-        encoding:[NSString defaultCStringEncoding]]];
-    [settings writeToFile:[@"~/.browterrc" stringByExpandingTildeInPath] atomically:FALSE];
+    [settings setObject:args[1] forKey:args[0]];
+    [settings writeToFile:kSettingsFileName atomically:FALSE];
+
     return 0;
-  } else if ([@"remove" isEqualToString:command]) {
-    if (argc < 3) {
+  }
+
+  if ([@"remove" isEqualToString:command]) {
+    if ([args count] < 1) {
       error(@"Error: \"remove\" command requires a RULE argument.");
       return 1;
-    } else if (argc > 3) {
+    } else if ([args count] > 1) {
       error(@"Error: Too many arguments for \"remove\" command.");
       return 1;
     }
 
-    [settings removeObjectForKey:[NSString stringWithCString:argv[2]
-        encoding:[NSString defaultCStringEncoding]]];
-    [settings writeToFile:[@"~/.browterrc" stringByExpandingTildeInPath] atomically:FALSE];
+    [settings removeObjectForKey:args[0]];
+    [settings writeToFile:kSettingsFileName atomically:FALSE];
+
     return 0;
-  } else if ([@"quit" isEqualToString:command]) {
-    if (argc > 2) {
+  }
+
+  if ([@"quit" isEqualToString:command]) {
+    if ([args count] > 0) {
       error(@"Error: No arguments allowed for \"quit\" command.");
       return 1;
     }
 
-    [NSTask launchedTaskWithLaunchPath:@"/bin/kill" arguments:@[[[settings objectForKey:@"pid"] description]]];
+    int pid = [[settings objectForKey:kProcessIdentifierKey] intValue];
+    if (pid) {
+      kill(pid, SIGHUP);
+    }
+
     return 0;
-  } else if (command) {
-    error(@"Error: \"%@\" is not a valid Browter command.", command);
-    return 1;
   }
 
+  error(@"Error: \"%@\" is not a valid Browter command.", command);
+  return 1;
+}
+
+/**
+ * Top-level object and glue code to give NSAppleEventManager something to
+ * call, as it cannot call arbitrary C functions.
+ *
+ * See `open_url` for actual URL routing logic.
+ */
+@interface URLHandler : NSObject
+- (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent;
+@end
+
+@implementation URLHandler
+- (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent
+{
+  open_url([[event paramDescriptorForKeyword:keyDirectObject] stringValue]);
+}
+@end
+
+/**
+ * Starts the long-running NSApplication, which will post our events for
+ * requests from the OS to open any `http://`, `https://`, or `file://` URL
+ * system-wide (as defined in Info.plist).
+ *
+ * See `open_url` for actual URL routing logic.
+ *
+ * This function never returns.
+ */
+int run_server() {
+  int pid = [[NSProcessInfo processInfo] processIdentifier];
+
+  // We switch to using NSLog for the remainder of the process. These logs can
+  // be viewed using syslog. On Mac OS X 10.7 or newer:
+  //
+  //     syslog -d /private/var/log/asl -w
+  //
   NSLog(@"Main Browter Process");
   NSLog(@"====================");
   NSLog(@"Settings: %@", settings);
-  NSLog(@"PID: %d", [[NSProcessInfo processInfo] processIdentifier]);
+  NSLog(@"PID: %d", pid);
 
-  atexit(pid_clear);
-  signal(SIGHUP, signal_handle);
-  signal(SIGINT, signal_handle);
-  signal(SIGTERM, signal_handle);
-  signal(SIGQUIT, signal_handle);
+  // Wire up signal handler for all reasonable signals.
+  signal(SIGHUP, clear_pid);
+  signal(SIGINT, clear_pid);
 
-  [settings setValue:[NSNumber numberWithInt:[[NSProcessInfo processInfo] processIdentifier]]
-    forKey:@"pid"];
-  [settings writeToFile:[@"~/.browterrc" stringByExpandingTildeInPath] atomically:FALSE];
+  // Set a PID in our global settings file for `browter quit`.
+  [settings setValue:[NSNumber numberWithInt:pid]
+    forKey:kProcessIdentifierKey];
+  [settings writeToFile:kSettingsFileName
+    atomically:FALSE];
 
+  // Initialize our URLHandler and wire up the one and only event we care
+  // about: Getting a URL.
+  URLHandler *handler = [[URLHandler alloc] init];
+  [[NSAppleEventManager sharedAppleEventManager] setEventHandler:handler
+    andSelector:@selector(handleGetURLEvent:withReplyEvent:)
+    forEventClass:kInternetEventClass
+    andEventID:kAEGetURL];
+
+  // Finally, defer to Cocoa for the remainder of the work.
+  return NSApplicationMain(0, NULL);
+}
+
+/**
+ * Processes our command/arguments, becoming long-running if no command was
+ * given. Most of the work is done in other methods.
+ */
+int main(int argc, const char * argv[]) {
   ProcessSerialNumber psn = { 0, kCurrentProcess };
   TransformProcessType(&psn, kProcessTransformToBackgroundApplication);
 
-  URLHandler *handler = [URLHandler handlerWithDictionary:settings];
+  // Transform non-compile-time-constant values.
+  kSettingsFileName = [kSettingsFileName stringByExpandingTildeInPath];
 
-  return NSApplicationMain(argc, argv);
+  settings = [NSMutableDictionary dictionaryWithContentsOfFile:kSettingsFileName];
+  if (!settings) {
+    settings = [[NSMutableDictionary alloc] init];
+  }
+
+  // If we have at least one argument, process it as a command.
+  NSArray<NSString *> *arguments = [[NSProcessInfo processInfo] arguments];
+
+  if ([arguments count] > 1) {
+    NSRange range = { 2, [arguments count] - 2 };
+    return run_command(arguments[1], [arguments subarrayWithRange:range]);
+  }
+
+  // If there are no arguments, start the long-running browser process.
+  return run_server();
 }
