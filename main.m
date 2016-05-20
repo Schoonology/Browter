@@ -80,80 +80,51 @@ void open_url(NSString *url) {
  * For more information on the desired behaviour of commands, see the README.
  */
 int run_command(NSString *command, NSArray<NSString *> *args) {
-  if ([@"default" isEqualToString:command]) {
-    if ([args count] < 1) {
-      error(@"Error: \"default\" command requires a BROWSER argument.");
-      return 1;
-    } else if ([args count] > 1) {
-      error(@"Error: Too many arguments for \"default\" command.");
-      return 1;
-    }
+  NSDictionary *commands = @{
+    @"default": @[@[@"BROWSER"], ^(NSArray<NSString *> *args) {
+      [settings setObject:args[0] forKey:kDefaultAppNameKey];
+      [settings writeToFile:kSettingsFileName atomically:FALSE];
+    }],
+    @"add": @[@[@"RULE", @"BROWSER"], ^(NSArray<NSString *> *args) {
+      [settings setObject:args[1] forKey:args[0]];
+      [settings writeToFile:kSettingsFileName atomically:FALSE];
+    }],
+    @"remove": @[@[@"RULE"], ^(NSArray<NSString *> *args) {
+      [settings removeObjectForKey:args[0]];
+      [settings writeToFile:kSettingsFileName atomically:FALSE];
+    }],
+    @"list": @[@[], ^(NSArray<NSString *> *args) {
+      printf("Rules:\n");
+      [settings enumerateKeysAndObjectsUsingBlock:^(NSString *rule, NSString *browser, BOOL *stop) {
+        printf("  %s => %s\n", [rule UTF8String], [browser UTF8String]);
+      }];
+    }],
+    @"quit": @[@[], ^(NSArray<NSString *> *args) {
+      int pid = [[settings objectForKey:kProcessIdentifierKey] intValue];
+      if (pid) {
+        kill(pid, SIGHUP);
+      }
+    }],
+  };
 
-    [settings setObject:args[0] forKey:kDefaultAppNameKey];
-    [settings writeToFile:kSettingsFileName atomically:FALSE];
+  id pair = [commands objectForKey:command];
+  int desiredCount = [[pair firstObject] count];
+  int countDiff = [args count] - desiredCount;
+  void (^block)(NSArray *) = [pair lastObject];
 
+  if (pair && countDiff == 0) {
+    block(args);
     return 0;
   }
 
-  if ([@"add" isEqualToString:command]) {
-    if ([args count] < 2) {
-      error(@"Error: \"add\" command requires both RULE and BROWSER arguments.");
-      return 1;
-    } else if ([args count] > 2) {
-      error(@"Error: Too many arguments for \"add\" command.");
-      return 1;
-    }
-
-    [settings setObject:args[1] forKey:args[0]];
-    [settings writeToFile:kSettingsFileName atomically:FALSE];
-
-    return 0;
+  if (!pair) {
+    error(@"Error: \"%@\" is not a valid Browter command.", command);
+  } else if (countDiff > 0) {
+    error(@"Error: Too many arguments for \"%@\" command.", command);
+  } else if (countDiff < 0) {
+    error(@"Error: \"%@\" command requires %@ arguments.", command, desiredCount);
   }
 
-  if ([@"remove" isEqualToString:command]) {
-    if ([args count] < 1) {
-      error(@"Error: \"remove\" command requires a RULE argument.");
-      return 1;
-    } else if ([args count] > 1) {
-      error(@"Error: Too many arguments for \"remove\" command.");
-      return 1;
-    }
-
-    [settings removeObjectForKey:args[0]];
-    [settings writeToFile:kSettingsFileName atomically:FALSE];
-
-    return 0;
-  }
-
-  if ([@"list" isEqualToString:command]) {
-    if ([args count] > 0) {
-      error(@"Error: No arguments allowed for \"list\" command.");
-      return 1;
-    }
-
-    printf("Rules:\n");
-    [settings enumerateKeysAndObjectsUsingBlock:^(NSString *rule, NSString *browser, BOOL *stop) {
-      printf("  %s => %s\n", [rule UTF8String], [browser UTF8String]);
-    }];
-
-    return 0;
-  }
-
-  if ([@"quit" isEqualToString:command]) {
-    if ([args count] > 0) {
-      error(@"Error: No arguments allowed for \"quit\" command.");
-      return 1;
-    }
-
-    int pid = [[settings objectForKey:kProcessIdentifierKey] intValue];
-    if (pid) {
-      kill(pid, SIGHUP);
-    }
-
-    return 0;
-  }
-
-  error(@"Error: \"%@\" is not a valid Browter command.", command);
   return 1;
 }
 
