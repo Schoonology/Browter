@@ -1,4 +1,4 @@
-# Browter
+![Browter](https://cloud.githubusercontent.com/assets/21932/15439916/642f94f4-1e87-11e6-98b6-b997956d6e9c.png)
 
 The Browser Router: Use multiple browsers at once! When a URL is opened by the
 OS (current Mac-only), Browter opens an application by name, passing the URL as
