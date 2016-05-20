@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>main</string>
+	<string>Browter</string>
 	<key>CFBundleIconFile</key>
 	<string>Calculator.icns</string>
 	<key>CFBundleIdentifier</key>
