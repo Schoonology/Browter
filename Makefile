@@ -9,4 +9,4 @@ app:
 	cp Info.plist Browter.app/Contents/.
 
 install: app
-	ln -sf `pwd`/Browter.app/Contents/browter /usr/local/bin/browter
+	ln -sf `pwd`/Browter.app/Contents/MacOS/Browter /usr/local/bin/browter
